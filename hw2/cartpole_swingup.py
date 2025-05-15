@@ -39,7 +39,7 @@ def linearize(f, s, u):
     """
     # WRITE YOUR CODE BELOW ###################################################
     # INSTRUCTIONS: Use JAX to compute `A` and `B` in one line.
-    raise NotImplementedError()
+    A,B = jax.jacobian(f,argnums=(0,1))(s,u)
     ###########################################################################
     return A, B
 
@@ -112,7 +112,28 @@ def ilqr(f, s0, s_goal, N, Q, R, QN, eps=1e-3, max_iters=1000):
 
         # PART (c) ############################################################
         # INSTRUCTIONS: Update `Y`, `y`, `ds`, `du`, `s_bar`, and `u_bar`.
-        raise NotImplementedError()
+        Vxx = QN
+        Vx = QN@(s_bar[N,:]-s_goal)
+        V = (s_bar[N,:]-s_goal).T@QN@(s_bar[N,:]-s_goal)
+        for k in reversed(range(N)):
+            Qk = (s_bar[k,:]-s_goal).T@Q@(s_bar[k,:]-s_goal) + (u_bar[k,:]).T@R@(u_bar[k,:]) + V
+            Qx = Q@(s_bar[k,:]-s_goal) + A[k,:,:].T@Vx
+            Qu = R@(u_bar[k,:]) +B[k,:,:].T@Vx
+            Qxx = Q + A[k,:,:].T@Vxx@A[k,:,:]
+            Quu = R + B[k,:,:].T@Vxx@B[k,:,:]
+            Qux = B[k,:,:].T@Vxx@A[k,:,:]
+            Y[k,:,:] = -np.linalg.inv(Quu)@Qux
+            y[k,:] = -np.linalg.inv(Quu)@Qu
+            # u_bar[k,:] = u_bar[k,:] + du[k,:]
+            V = Qk - 1/2*y[k,:].T@Quu@y[k,:]
+            Vx = Qx - Y[k,:,:].T@Quu@y[k,:]
+            Vxx = Qxx - Y[k,:,:].T@Quu@Y[k,:,:]
+
+        for k in range(N):
+            du[k,:] = Y[k,:,:]@(ds[k,:])+y[k,:]
+            ds[k+1,:] = f(s_bar[k,:], u_bar[k,:]+du[k,:]) - s_bar[k+1,:]
+            s_bar[k+1,:] = s_bar[k+1,:] + ds[k+1,:]
+            u_bar[k,:] = u_bar[k,:] + du[k,:]
         #######################################################################
 
         if np.max(np.abs(du)) < eps:
@@ -156,7 +177,7 @@ s_goal = np.array([0.0, np.pi, 0.0, 0.0])  # goal state
 T = 10.0  # simulation time
 dt = 0.1  # sampling time
 animate = False  # flag for animation
-closed_loop = False  # flag for closed-loop control
+closed_loop = True  # flag for closed-loop control
 
 # Initialize continuous-time and discretized dynamics
 f = jax.jit(cartpole)
@@ -181,11 +202,11 @@ for k in range(N):
     # INSTRUCTIONS: Compute either the closed-loop or open-loop value of
     # `u[k]`, depending on the Boolean flag `closed_loop`.
     if closed_loop:
-        u[k] = 0.0
-        raise NotImplementedError()
+        u[k] = Y[k,:,:]@(s[k,:]-s_bar[k,:])+y[k,:]
+        # raise NotImplementedError()
     else:  # do open-loop control
-        u[k] = 0.0
-        raise NotImplementedError()
+        u[k] = u_bar[k]
+        # raise NotImplementedError()
     ###########################################################################
     s[k + 1] = odeint(lambda s, t: f(s, u[k]), s[k], t[k : k + 2])[1]
 print("done! ({:.2f} s)".format(time.time() - start), flush=True)

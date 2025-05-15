@@ -5,6 +5,8 @@ Autonomous Systems Lab (ASL), Stanford University
 """
 
 import numpy as np
+import jax
+import jax.numpy as jnp
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 
@@ -60,7 +62,11 @@ def reference(t: float) -> np.ndarray:
 
     # PART (d) ##################################################
     # INSTRUCTIONS: Compute the reference state for a given time
-    raise NotImplementedError()
+    # raise NotImplementedError()
+    s_bar = np.array([0,np.pi,0,0])
+    s_bar[0] = a*np.sin(2*np.pi*t/T)
+    s_bar[2] = a*2*np.pi/T*np.cos(2*np.pi*t/T)
+    return s_bar
     # END PART (d) ##############################################
 
 
@@ -85,8 +91,12 @@ def ricatti_recursion(
     for i in range(max_iters):
         # PART (b) ##################################################
         # INSTRUCTIONS: Apply the Ricatti equation until convergence
-        K = NotImplemented
-        raise NotImplementedError()
+        K = -np.linalg.inv(R+B.T@P_prev@B)@B.T@P_prev@A
+        if np.max(Q + A.T@P_prev@(A+B@K)-P_prev) <= eps:
+            converged = True
+            break
+        P_prev = Q + A.T@P_prev@(A+B@K)
+        # raise NotImplementedError()
         # END PART (b) ##############################################
     if not converged:
         raise RuntimeError("Ricatti recursion did not converge!")
@@ -112,16 +122,21 @@ def simulate(
             np.ndarray: The control history, shape (num_timesteps, m)
     """
 
-    def cartpole_wrapper(s, t, u):
+    def cartpole_wrapper(s, tc):
         """Helper function to get cartpole() into a form preferred by odeint, which expects t as the second arg"""
-        return cartpole(s, u)
+        tind = np.where(t <= tc)[0][np.argmin(np.abs(t[np.where(t <= tc)[0]] - tc))]
+        return cartpole(s, K@(s-s_ref[tind,:])+u_ref)
 
     # PART (c) ##################################################
     # INSTRUCTIONS: Complete the function to simulate the cartpole system
     # Hint: use the cartpole wrapper above with odeint
-    s = NotImplemented
-    u = NotImplemented
-    raise NotImplementedError()
+    # s = NotImplemented
+    # u = NotImplemented
+    # raise NotImplementedError()
+    s = odeint(cartpole_wrapper,s0,t)
+    u = np.zeros((len(t),1))
+    for k in range(0,len(t)):
+        u[k] = K@(s[k,:]-s_ref[k,:])+u_ref
     # END PART (c) ##############################################
     return s, u
 
@@ -136,8 +151,9 @@ def compute_lti_matrices() -> tuple[np.ndarray, np.ndarray]:
     """
     # PART (a) ##################################################
     # INSTRUCTIONS: Construct the A and B matrices
-    A = NotImplemented
-    B = NotImplemented
+    # dfds,dfdu = jax.jacobian(cartpole,argnums=(0,1))(jnp.array([0.0,np.pi,0.0,0.0], dtype=jnp.float32),jnp.array([0.0], dtype=jnp.float32))
+    A = np.eye(4) + dt*np.array([[0,0,1,0],[0,0,0,1],[0,mp*g/mc,0,0],[0,(mc+mp)*g/(mc*L),0,0]])
+    B = dt*np.array([[0],[0],[1/mc],[1/(mc*L)]])
     # END PART (a) ##############################################
     return A, B
 
@@ -181,7 +197,8 @@ def main():
     A, B = compute_lti_matrices()
 
     # Part B
-    Q = np.eye(n)  # state cost matrix
+    Q = 1*np.eye(n)  # state cost matrix
+    # Q= np.diag(np.array([10000,1,10000,1]))
     R = np.eye(m)  # control cost matrix
     K = ricatti_recursion(A, B, Q, R)
 
