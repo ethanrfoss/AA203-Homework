@@ -38,7 +38,15 @@ def do_mpc(
     # INSTRUCTIONS: Construct and solve the MPC problem using CVXPY.
 
     cost = 0.0
-    constraints = []
+    constraints = [x_cvx[0,:]==x0]
+    for k in range(0,N):
+        constraints.append(x_cvx[k+1,:]==A@x_cvx[k,:]+B@u_cvx[k,:])
+        constraints.append(cvx.norm(u_cvx[k,:],p=np.inf)<=ru)
+        constraints.append(cvx.norm(x_cvx[k,:],p=np.inf)<=rx)
+        cost+=cvx.quad_form(x_cvx[k,:],Q) + cvx.quad_form(u_cvx[k,:],R)
+    constraints.append(cvx.norm(x_cvx[N,:],p=np.inf)<=min(rf,rx))
+    cost+=cvx.quad_form(x_cvx[N,:],P)
+
 
     # END PART (a) ############################################################
 
@@ -78,6 +86,14 @@ def compute_roa(
             #               to the origin. If the state converges, flag the
             #               corresponding entry of `roa` with a value of `1`.
 
+            for k in range(max_steps):
+                xmpc,umpc,status = do_mpc(x,A,B,P,Q,R,N,rx,ru,rf)
+                if status == "infeasible":
+                    break
+                x = A@x+B@umpc[0,:]
+                if np.linalg.norm(x,np.inf) <= tol:
+                    roa[i,j] = 1
+                    break
             # END PART (b) ####################################################
     return roa
 

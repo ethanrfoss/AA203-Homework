@@ -81,7 +81,26 @@ class PlanarQuadrotor:
         # PART (a): WRITE YOUR CODE BELOW ###############################################
         # You may find `jnp.where` to be useful; see corresponding numpy docstring:
         # https://numpy.org/doc/stable/reference/generated/numpy.where.html
-        raise NotImplementedError
+        # T = np.zeros([2,1])
+        # if grad_value[1]*np.cos(state[2])/self.m - grad_value[3]*self.l/self.Iyy < 0:
+        #     T[0] = self.max_thrust_per_prop
+        # else:
+        #     T[0] = 0
+
+        # if grad_value[1]*np.cos(state[2])/self.m + grad_value[3]*self.l/self.Iyy < 0:
+        #     T[1] = self.max_thrust_per_prop
+        # else:
+        #     T[1] = 0
+        # return T
+        expr1 = grad_value[1]*jnp.cos(state[2])/self.m - grad_value[3]*self.l/self.Iyy
+        expr2 = grad_value[1]*jnp.cos(state[2])/self.m + grad_value[3]*self.l/self.Iyy
+
+        def TSat(maxthrust):
+            return maxthrust
+        def TUnSat(maxthrust):
+            return 0.0
+        
+        return jnp.stack([jax.lax.cond(expr1<0, TSat, TUnSat,operand=(self.max_thrust_per_prop)),jax.lax.cond(expr2<0, TSat, TUnSat,operand=(self.max_thrust_per_prop))])
         #################################################################################
 
     def hamiltonian(self, state, time, value, grad_value):
@@ -123,7 +142,7 @@ def target_set(state):
         A scalar, nonpositive iff the state is in the target set.
     """
     # PART (b): WRITE YOUR CODE BELOW ###############################################
-    raise NotImplementedError
+    return jnp.max(jnp.array([1.0/4.0*jnp.max(jnp.array([3-state[0],state[0]-7])),1.0/2.0*jnp.max(jnp.array([-1-state[1],state[1]-1])),1.0/(jnp.pi/6.0)*jnp.max(jnp.array([-jnp.pi/12-state[2],state[2]-jnp.pi/12])),1.0/2.0*jnp.max(jnp.array([-1-state[3],state[3]-1]))]))
     #################################################################################
 
 
@@ -137,7 +156,7 @@ def envelope_set(state):
         A scalar, nonpositive iff the state is in the operational envelope.
     """
     # PART (c): WRITE YOUR CODE BELOW ###############################################
-    raise NotImplementedError
+    return jnp.max(jnp.array([1.0/8.0*jnp.max(jnp.array([1-state[0],state[0]-9])),1.0/12.0*jnp.max(jnp.array([-6-state[1],state[1]-6])),1.0/16.0*jnp.max(jnp.array([-8-state[3],state[3]-8]))]))
     #################################################################################
 
 
