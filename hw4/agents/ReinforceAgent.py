@@ -62,11 +62,11 @@ class ReinforceAgent(Agent):
         ###     torch.stack: https://docs.pytorch.org/docs/stable/generated/torch.stack.html
 
         # 1) Naive REINFORCE
-
+        loss = sum(r * l for r, l in zip(rewards*self.gamma**np.array(range(len(rewards))), log_probs))
         # 2) REINFORCE with causality trick
-
+        loss = sum(r * l for r, l in zip(np.cumsum(rewards[::-1])[::-1], log_probs))
         # 3) REINFORCE with causality trick and baseline to "center" the returns
-        loss = None
+        #loss = None
         ###########################################################################
 
         self.optimizer.zero_grad()

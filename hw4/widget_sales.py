@@ -82,6 +82,9 @@ for k in tqdm(range(1, num_epochs + 1)):
     # ####################### PART (a): YOUR CODE BELOW #######################
 
     # INSTRUCTIONS: Update `Q` using Q-learning.
+    for i in range(log["s"].size-1):
+        Q[log["s"][i]==S,log["a"][i]==A] = Q[log["s"][i]==S,log["a"][i]==A]  + α*(log["r"][i] + γ*np.max(Q[log["s"][i+1]==S,:]) - Q[log["s"][i]==S,log["a"][i]==A])
+    
 
     # ############################# END PART (a) ##############################
 
@@ -94,7 +97,11 @@ converged = False
 eps = 1e-4
 max_iters = 500
 Q_vi = np.zeros((S.size, A.size))
-Q_vi_prev = np.full(Q_vi.shape, np.inf)
+#Q_vi_prev = np.full(Q_vi.shape, np.inf)
+Q_vi_prev = np.zeros((S.size, A.size))
+
+R = np.vectorize(lambda s, a, sp: 1.2*np.min(np.array([s+a,-sp+s+a])) -1 - 0.05*s - np.sqrt(a))
+Pf = np.vectorize(lambda sp, s, a: {0: 0.1, 1: 0.3, 2: 0.3, 3: 0.2, 4: 0.1}.get(-sp + (s + a), 0))
 
 for k in tqdm(range(max_iters)):
 
@@ -102,6 +109,16 @@ for k in tqdm(range(max_iters)):
 
     # INSTRUCTIONS: Update `Q_vi` using value iteration.
 
+    # for i in range(S.size):
+    #     Q_vi[i,:] = 0
+    #     for j in range(S.size):
+    #         Q_vi[i,:] = Q_vi[i,:] + Pf(S[j],S[i],A)*(R(S[i],A,S[j])+γ*np.max(Q_vi_prev[j,:]))
+    for s in range(S.size):
+        for a in range(A.size):
+            Q_vi[s,a] = 0
+            for sp in range(S.size):
+                Q_vi[s,a] += Pf(S[sp],S[s],A[a])*(R(S[s],A[a],S[sp])+γ*np.max(Q_vi_prev[sp,:]))
+            
     # ############################# END PART (b) ##############################
 
     if np.max(np.abs(Q_vi - Q_vi_prev)) < eps:
@@ -151,10 +168,12 @@ plt.show()
 T = 5 * 365
 
 # TODO: replace the next four lines with your code
-a_opt_ql = np.zeros(S.size)
-profit_ql = np.zeros(T)
-a_opt_vi = np.zeros(S.size)
-profit_vi = np.zeros(T)
+a_opt_ql = lambda s, A=A: A[np.argmax(Q[s==S,:])]
+_,_,profit_ql = simulate(rng,a_opt_ql,T)
+profit_ql = np.cumsum(profit_ql)
+a_opt_vi = lambda s, A=A: A[np.argmax(Q_vi[s==S,:])]
+_,_,profit_vi = simulate(rng,a_opt_vi,T) 
+profit_vi = np.cumsum(profit_vi)
 
 # ############################### END PART (c) ################################
 

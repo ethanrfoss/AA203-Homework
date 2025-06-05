@@ -1,10 +1,12 @@
 from .Agent import Agent, Transition
 from collections import deque
 from typing import Union
+from typing import List
 import gymnasium as gym
 from tqdm import tqdm
 import numpy as np
-import math, torch, random
+import matplotlib.pyplot as plt
+import math, torch, random, datetime
 
 class QLearning(Agent):
     def __init__(self, state_dim : int, action_dim : int, hidden_dim : int=24, use_gpu : bool=False) -> None:
@@ -34,7 +36,13 @@ class QLearning(Agent):
         ###     nn.Sequential: https://docs.pytorch.org/docs/stable/generated/torch.nn.Sequential.html
         ###     nn.Linear: https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html
         ###     nn.ReLU: https://docs.pytorch.org/docs/stable/generated/torch.nn.ReLU.html
-        raise NotImplementedError()
+        return torch.nn.Sequential(
+            torch.nn.Linear(self.state_dim, self.hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.hidden_dim,self.hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.hidden_dim, self.action_dim)
+        )
         ###########################################################################
     
     def policy(self, state : Union[np.ndarray, torch.tensor], train : bool=False) -> torch.Tensor:
@@ -51,7 +59,24 @@ class QLearning(Agent):
         ###     torch.randint: https://docs.pytorch.org/docs/stable/generated/torch.randint.html
         ###     torch.argmax: https://docs.pytorch.org/docs/stable/generated/torch.argmax.html
         ###     torch.no_grad(): https://docs.pytorch.org/docs/stable/generated/torch.no_grad.html
-        raise NotImplementedError()
+        # if train:
+        #     if random.random() <= self.eps_threshold():
+        #         return torch.randint(low=0,high=2,size=(1,))
+
+        # with torch.no_grad():
+        #     # return torch.argmax(self.policy_network(state))
+        #     return torch.argmax(torch.cat([self.policy_network(torch.cat([state, torch.zeros((1,))], dim=0)),self.policy_network(torch.cat([state, torch.ones((1,))], dim=0))],dim=0))
+        #     # if self.policy_network(torch.from_numpy(np.append(state,0).astype(np.float32)).unsqueeze(0)).item() >= self.policy_network(torch.from_numpy(np.append(state,1).astype(np.float32)).unsqueeze(0)).item():
+        #     #     return torch.from_numpy(0.0).unsqueeze(0)
+        #     # else:
+        #     #     return torch.from_numpy(1.0).unsqueeze(0)
+        if train:
+            if random.random() < self.eps_threshold():
+                return torch.randint(low=0,high=2,size=(1,)).squeeze(0)
+            
+        # with torch.no_grad():
+        return torch.argmax(self.policy_network(state))
+
         ###########################################################################
     
     def sample_buffer(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -65,10 +90,11 @@ class QLearning(Agent):
             actions.append(a)
             with torch.no_grad():
                 targets.append(r if sp is None else r + self.gamma*torch.max(self.policy_network(sp)))
+                # targets.append(r if sp is None else r + self.gamma*torch.max(torch.cat([self.policy_network(torch.cat([sp, torch.zeros((1,))], dim=0)),self.policy_network(torch.cat([sp, torch.ones((1,))], dim=0))],dim=0)))
         
-        return torch.cat(states), torch.tensor(actions, dtype=torch.int64).to(self.device).unsqueeze(1), torch.cat(targets).unsqueeze(1)
+        return torch.stack(states), torch.tensor(actions, dtype=torch.int64).to(self.device).unsqueeze(1), torch.stack(targets).unsqueeze(1)
 
-    def train(self, env : gym.wrappers, num_episodes : int=100) -> None:
+    def train(self, env : gym.wrappers, num_episodes : int=195) -> None:
         ### WRITE YOUR CODE BELOW ###################################################
         ###     1) Implementing the training algorithm according to Algorithm 1 on page 5 in "Playing Atari with Deep Reinforcement Learning".
         ###     2) Importantly, only take a gradient step on your memory buffer if the buffer size exceeds the batch size hyperparameter. 
@@ -81,5 +107,42 @@ class QLearning(Agent):
         ###     torch.optim.AdamW: https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
         ###     torch.nn.MSELoss: https://docs.pytorch.org/docs/stable/generated/torch.nn.MSELoss.html
         ###     torch.nn.utils.clip_grad_value_: https://docs.pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_value_.html
-        raise NotImplementedError()
+        criterion = torch.nn.MSELoss()
+        optimizer = torch.optim.AdamW(self.policy_network.parameters())
+        reward_history = []
+        for i in range(num_episodes):
+            terminated = False
+            truncated = False
+            obs, info = env.reset()
+            rewards = []
+            while not terminated and not truncated:
+                action = self.policy(torch.tensor(obs, dtype=torch.float),True)
+                next_obs, reward, terminated, truncated, info = env.step(action.item())
+                self.buffer.append(Transition(torch.tensor(obs, dtype=torch.float32),torch.tensor(action, dtype=torch.int64),torch.tensor(reward, dtype=torch.float32),None if terminated else torch.tensor(next_obs, dtype=torch.float32)))
+                if len(self.buffer) > self.batch_size:
+                    batchstates, batchactions, batchtargets = self.sample_buffer()
+                    # loss = criterion(batchtargets,self.policy_network(batchstates)[range(self.batch_size),batchactions.squeeze(1)].unsqueeze(1))
+                    loss = sum((batchtargets-self.policy_network(batchstates)[range(self.batch_size),batchactions.squeeze(1)].unsqueeze(1))**2)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_value_(self.policy_network.parameters(), clip_value=100.0)
+                    optimizer.step()
+                obs = next_obs
+                rewards.append(reward)
+            reward_history.append(sum(rewards))
+        self.plot_rewards(reward_history)
         ###########################################################################
+
+    @staticmethod
+    def plot_rewards(reward_history: List[int]) -> None:
+        current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        plt.figure()
+        plt.plot(reward_history)
+        plt.xlabel('Episode')
+        plt.ylabel('Total Reward')
+        plt.title('Training Reward Curve')
+        filename = f"reward_curve_{current_time}.png"
+        plt.savefig(filename)
+        plt.show()
+        print(f"Saved reward curve as {filename}")
